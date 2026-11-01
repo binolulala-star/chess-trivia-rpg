@@ -1,0 +1,12 @@
+import puppeteer from 'puppeteer-core'; import path from 'node:path';
+const browser=await puppeteer.launch({executablePath:'/usr/bin/google-chrome',headless:'new',protocolTimeout:120000,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist'],defaultViewport:{width:1000,height:640}});
+const page=await browser.newPage(); const errs=[]; page.on('pageerror',e=>errs.push(e.message)); page.on('console',m=>{if(m.type()==='error')errs.push(m.text())});
+const sleep=ms=>new Promise(r=>setTimeout(r,ms)); const ev=(f,...a)=>page.evaluate(f,...a);
+await page.goto('file://'+path.resolve('dist/debug.html')); await sleep(1500); await page.click('#introGo'); await sleep(300);
+const info=()=>ev(()=>({style:__view.style, hd:[...__view.pieces.values()].filter(r=>r.group.userData.hd).length, n:__view.pieces.size}));
+console.log('start', await info());
+await page.select('#selStyle','3d'); await sleep(800); console.log('3d', await info());
+await page.screenshot({path:'/tmp/sim/style3d.png'});
+await page.select('#selStyle','hd'); await sleep(800); console.log('hd', await info());
+await page.reload(); await sleep(1500); console.log('after reload', await info());
+console.log(errs); await browser.close();

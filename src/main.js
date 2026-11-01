@@ -17,7 +17,7 @@ const G = {
   phase: 'idle', sel: null, status: null, moves: [], captureTried: false,
   deck: new R.QuizDeck(QUESTIONS), last: [], over: false, humanColor: 'w',
   token: 0, duelSpeed: 1, quizCancel: null, checkAnnounced: false,
-  hist: [], rvIdx: 0, rvBoard: null, rvAuto: 0,
+  hist: [], rvIdx: 0, rvBoard: null, rvAuto: 0, style: 'hd',
 };
 const PIECE_SYM = { w: { P: '♙', N: '♘', B: '♗', R: '♖', Q: '♕', K: '♔' }, b: { P: '♟', N: '♞', B: '♝', R: '♜', Q: '♛', K: '♚' } };
 const snapBoard = (b) => b.map((row) => row.map((p) => (p ? { ...p } : null)));
@@ -29,15 +29,16 @@ function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem('chessTriviaSettings') || '{}');
     if (s.mode) G.mode = s.mode; if (s.level) G.level = s.level; if (s.grade) G.grade = s.grade;
-    G.extra = !!s.extra; if (s.muted) sfx.setMuted(true);
+    G.extra = !!s.extra; if (s.muted) sfx.setMuted(true); if (s.style) G.style = s.style;
   } catch (e) { /* 無痕模式等情況略過 */ }
 }
 function saveSettings() {
-  try { localStorage.setItem('chessTriviaSettings', JSON.stringify({ mode: G.mode, level: G.level, grade: G.grade, extra: G.extra, muted: sfx.isMuted() })); } catch (e) { /* ignore */ }
+  try { localStorage.setItem('chessTriviaSettings', JSON.stringify({ mode: G.mode, level: G.level, grade: G.grade, extra: G.extra, muted: sfx.isMuted(), style: G.style })); } catch (e) { /* ignore */ }
 }
 loadSettings();
 
 const view = new View($('stage'), { onPick, fxLayer: $('fxlayer') });
+view.style = G.style;
 window.__view = view;
 
 // ===== 工具 =====
@@ -575,6 +576,12 @@ function bindUI() {
   };
   $('selLevel').onchange = (e) => { G.level = e.target.value; saveSettings(); log(`AI 強度切換為：${R.AI_NAME[G.level]}`, 'sys'); };
   $('selGrade').onchange = (e) => { G.grade = e.target.value; saveSettings(); };
+  $('selStyle').value = G.style || 'hd';
+  $('selStyle').onchange = (e) => {
+    G.style = e.target.value; saveSettings(); view.style = G.style;
+    if (G.phase === 'review') { gotoStep(G.rvIdx); return; }
+    if (G.phase === 'idle' || G.phase === 'over') view.syncAll(G.st.board); // 動畫進行中則下一次重建時套用
+  };
   $('chkExtra').onchange = (e) => { G.extra = e.target.checked; saveSettings(); };
   document.querySelectorAll('[data-view]').forEach((b) => { b.onclick = () => view.setPreset(b.dataset.view); });
   $('btnMute').onclick = () => { sfx.setMuted(!sfx.isMuted()); $('btnMute').textContent = sfx.isMuted() ? '🔇' : '🔊'; saveSettings(); sfx.unlock(); };

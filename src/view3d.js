@@ -1,12 +1,14 @@
 // Three.js 3D 場景、程序化棋子、球面座標運鏡、射線互動、原場決鬥演出
 import * as THREE from 'three';
 import { titleOf, NAMES, THEME, SKILL } from './rpg.js';
+import { ART } from './art.js';
 
 const PI = Math.PI;
 export const sqPos = (r, c) => new THREE.Vector3(c - 3.5, 0, r - 3.5);
 const easeIO = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
 const easeOut = (k) => 1 - Math.pow(1 - k, 3);
 const Y = (y) => new THREE.Vector3(0, y, 0);
+const _v1 = new THREE.Vector3();
 const HEIGHT = { P: 1.05, N: 1.3, B: 1.5, R: 1.17, Q: 1.4, K: 1.7 };
 const LV_COL = ['#e9ecf5', '#6fd0ff', '#c58bff', '#ffd54a'];
 const LV_HEX = [0xffffff, 0x5ec8ff, 0xb36bff, 0xffd34d];
@@ -280,6 +282,51 @@ function buildPiece(type, color) {
   return g;
 }
 
+
+// ===== 高清立牌：使用者提供的雕像渲染圖（去背），永遠面向鏡頭 =====
+const HD_SIZE = { P: 1.55, N: 1.26, B: 1.68, R: 1.4, Q: 1.7, K: 1.8 }; // 立牌高度（世界單位）
+const HD_TOP = { P: 1.34, N: 1.1, B: 1.48, R: 1.24, Q: 1.48, K: 1.6 }; // 標籤／特效用頭頂高度
+const _hdTex = {};
+function hdTexture(type, white) { // 黑方：亮色大理石與銀甲轉成黑曜石色，金飾與符文保留
+  const key = type + (white ? 'w' : 'b');
+  if (_hdTex[key]) return _hdTex[key];
+  const tex = new THREE.Texture(); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const img = new Image();
+  img.onload = () => {
+    if (white) { tex.image = img; tex.needsUpdate = true; return; }
+    const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
+    const x = cv.getContext('2d'); x.drawImage(img, 0, 0);
+    const d = x.getImageData(0, 0, cv.width, cv.height), a = d.data;
+    for (let i = 0; i < a.length; i += 4) {
+      if (!a[i + 3]) continue;
+      const r = a[i] / 255, g = a[i + 1] / 255, b = a[i + 2] / 255;
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b), sat = mx ? (mx - mn) / mx : 0;
+      const v = mx;
+      const nv = v > 0.42 ? 0.07 + (1 - v) * 0.62 : v * 0.75; // 亮→暗（紋路反轉成淺色）
+      const w = Math.min(1, Math.max(0, (sat - 0.18) / 0.22)); // 飽和色（金、符文）保留比例
+      const dr = nv * 0.86, dg = nv * 0.9, db = nv * 1.12;
+      a[i] = 255 * (dr * (1 - w) + r * 0.88 * w);
+      a[i + 1] = 255 * (dg * (1 - w) + g * 0.88 * w);
+      a[i + 2] = 255 * Math.min(1, db * (1 - w) + b * 0.88 * w);
+    }
+    x.putImageData(d, 0, 0);
+    tex.image = cv; tex.needsUpdate = true;
+  };
+  img.src = ART[type].src;
+  return (_hdTex[key] = tex);
+}
+function buildPieceHD(type, color) {
+  const g = new THREE.Group();
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: hdTexture(type, color === 'w'), transparent: true, alphaTest: 0.08, depthWrite: true }));
+  const h = HD_SIZE[type], w = h * ART[type].w / ART[type].h;
+  sp.scale.set(w, h, 1); sp.center.set(0.5, 0); sp.userData.hd = true;
+  g.add(sp);
+  const blob = new THREE.Mesh(new THREE.CircleGeometry(0.4, 32), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.38, depthWrite: false }));
+  blob.rotation.x = -PI / 2; blob.position.y = 0.006; blob.scale.set(1, 0.85, 1); g.add(blob);
+  g.userData.hd = sp; g.userData.idle = [];
+  return g;
+}
+
 function makeLabel(name, title, lv, white) {
   const cv = document.createElement('canvas');
   cv.width = 640; cv.height = 140;
@@ -313,6 +360,7 @@ export class View {
   constructor(el, { onPick, fxLayer }) {
     this.el = el; this.onPick = onPick; this.fxLayer = fxLayer;
     this.fast = 1; // 1, 2, 'skip'
+    this.style = 'hd'; // 'hd' 高清立牌 / '3d' 程式模型
     this.timeScale = 1; // 慢動作用：<1 時遊戲時間變慢
     this.tweens = []; this.fx = []; this.rfx = []; // rfx 以真實時間推進（不受慢動作影響）
     this.follow = null;
@@ -521,7 +569,15 @@ export class View {
     }
     if (this.shakeT > 0) this.shakeT = Math.max(0, this.shakeT - dt);
     const tt = now / 1000;
+    const camP = this.camera.position;
     for (const rec of this.pieces.values()) {
+      const hs = rec.group.userData.hd;
+      if (hs) { // 立牌錨點推到底座前緣（朝鏡頭方向），讓圖中底座中心落在格子中央
+        const gp = rec.group.position, dx = camP.x - gp.x, dz = camP.z - gp.z, L = Math.hypot(dx, dz) || 1;
+        _v1.set(gp.x + (dx / L) * 0.3, gp.y, gp.z + (dz / L) * 0.3);
+        rec.group.worldToLocal(_v1); hs.position.copy(_v1);
+        hs.material.rotation = -(rec.group.rotation.z + rec.group.rotation.x * 0.7);
+      }
       if (rec.ring) { rec.ring.rotation.z += dt * 0.8; rec.ring.material.opacity = 0.65 + Math.sin(tt * 3 + rec.piece.id) * 0.2; }
       if (rec.crown) { rec.crown.rotation.y += dt * 2; rec.crown.position.y = rec.h + 0.62 + Math.sin(tt * 2 + rec.piece.id) * 0.04; }
       for (const it of rec.group.userData.idle || []) {
@@ -544,9 +600,10 @@ export class View {
 
   // ===== 棋子管理 =====
   addPiece(piece, r, c) {
-    const group = buildPiece(piece.type, piece.color);
+    const hd = this.style !== '3d';
+    const group = hd ? buildPieceHD(piece.type, piece.color) : buildPiece(piece.type, piece.color);
     const p = sqPos(r, c); group.position.copy(p);
-    const rec = { piece, group, r, c, h: HEIGHT[piece.type], ring: null, crown: null, sprite: null };
+    const rec = { piece, group, r, c, h: (hd ? HD_TOP : HEIGHT)[piece.type], ring: null, crown: null, sprite: null };
     this.pieces.set(piece.id, rec);
     this.scene.add(group);
     this.resetFacing(rec);
@@ -587,7 +644,7 @@ export class View {
     const lv = Math.min(3, piece.kills);
     if (rec.sprite) rec.group.remove(rec.sprite);
     const sp = makeLabel(NAMES[piece.type], titleOf(piece), lv, piece.color === 'w');
-    const PROP = { P: 0.12, N: 0.1, B: 0.12, R: 0.12, Q: 0.15, K: 0.15 }[piece.type];
+    const PROP = rec.group.userData.hd ? 0.08 : { P: 0.12, N: 0.1, B: 0.12, R: 0.12, Q: 0.15, K: 0.15 }[piece.type];
     sp.position.y = rec.h + PROP + (lv >= 3 ? 0.7 : lv ? 0.2 : 0);
     rec.group.add(sp); rec.sprite = sp;
     if (rec.ring) rec.group.remove(rec.ring);
@@ -827,11 +884,13 @@ export class View {
   flash(piece, color = 0xffd34d, dur = 0.5) {
     const rec = this.rec(piece); if (!rec) return;
     const mats = []; rec.group.traverse((o) => { if (o.isMesh && o.material && o.material.emissive) mats.push([o.material, o.material.emissive.clone(), o.material.emissiveIntensity]); });
-    let t = 0; const col = new THREE.Color(color);
+    const hs = rec.group.userData.hd;
+    let t = 0; const col = new THREE.Color(color); const hot = new THREE.Color(1, 1, 1).lerp(col, 0.6).multiplyScalar(2.2);
     this.fx.push((dt) => {
       t += dt / dur; const k = Math.sin(Math.min(1, t) * PI);
       for (const [m, e0, i0] of mats) { m.emissive.copy(e0).lerp(col, k); m.emissiveIntensity = i0 + k * 1.4; }
-      if (t >= 1) { for (const [m, e0, i0] of mats) { m.emissive.copy(e0); m.emissiveIntensity = i0; } return false; }
+      if (hs) hs.material.color.setRGB(1, 1, 1).lerp(hot, k);
+      if (t >= 1) { for (const [m, e0, i0] of mats) { m.emissive.copy(e0); m.emissiveIntensity = i0; } if (hs) hs.material.color.setRGB(1, 1, 1); return false; }
     });
   }
   whiteFlash(strength = 0.9) {
@@ -1088,6 +1147,7 @@ export class View {
       if (keep.includes(rec.piece.id)) continue;
       rec.group.traverse((o) => {
         if (o.isMesh) { o.material.transparent = on; o.material.opacity = on ? 0.1 : 1; o.material.depthWrite = !on; o.material.needsUpdate = true; o.castShadow = !on; }
+        else if (o.isSprite && o.userData.hd) { o.material.opacity = on ? 0.12 : 1; o.material.alphaTest = on ? 0.01 : 0.08; o.material.depthWrite = !on; o.material.needsUpdate = true; }
         else if (o.isSprite) o.visible = !on;
       });
     }

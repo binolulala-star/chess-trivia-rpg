@@ -23,3 +23,12 @@
     npm install
     node build.mjs        # 產生 dist/chess-trivia-rpg-3d.html
     cp dist/chess-trivia-rpg-3d.html index.html
+
+## 高清雕像棋子
+`art/src/` 是六張雕像原圖。重新產生內嵌圖檔：
+
+    pip install "rembg[cpu]" pillow
+    cd art && python3 cut.py && python3 pack.py   # 產生 src/art.js
+    cd .. && node build.mjs
+
+遊戲內工具列「棋子」可切換「高清雕像／3D 模型」。
