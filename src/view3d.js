@@ -7,128 +7,270 @@ export const sqPos = (r, c) => new THREE.Vector3(c - 3.5, 0, r - 3.5);
 const easeIO = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
 const easeOut = (k) => 1 - Math.pow(1 - k, 3);
 const Y = (y) => new THREE.Vector3(0, y, 0);
-const HEIGHT = { P: 0.82, N: 1.12, B: 1.2, R: 0.98, Q: 1.38, K: 1.58 };
+const HEIGHT = { P: 1.05, N: 1.3, B: 1.5, R: 1.17, Q: 1.4, K: 1.7 };
 const LV_COL = ['#e9ecf5', '#6fd0ff', '#c58bff', '#ffd54a'];
 const LV_HEX = [0xffffff, 0x5ec8ff, 0xb36bff, 0xffd34d];
 
 const lathe = (pts, seg = 28) => new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), seg);
 
+// ===== 棋子造型：大理石本體 + 金/銀金屬飾件 + 發光符文（參考雕像設定圖） =====
+const _marbleCache = {};
+function marbleTex(kind) { // 程序化大理石紋理（white / black / gold 紋）
+  if (_marbleCache[kind]) return _marbleCache[kind];
+  const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+  const x = cv.getContext('2d');
+  const base = { white: '#f3f0e8', black: '#2a2d40' }[kind];
+  x.fillStyle = base; x.fillRect(0, 0, 256, 256);
+  let s = kind === 'white' ? 1234 : 4321; const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  for (let i = 0; i < 26; i++) { // 柔霧斑
+    const px = rnd() * 256, py = rnd() * 256, rr = 20 + rnd() * 50;
+    const gr = x.createRadialGradient(px, py, 0, px, py, rr);
+    gr.addColorStop(0, kind === 'white' ? 'rgba(200,196,185,0.18)' : 'rgba(120,125,160,0.13)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = gr; x.fillRect(px - rr, py - rr, rr * 2, rr * 2);
+  }
+  for (let i = 0; i < 16; i++) { // 紋路
+    x.beginPath(); let px = rnd() * 256, py = rnd() * 256; x.moveTo(px, py);
+    for (let k = 0; k < 6; k++) { px += (rnd() - 0.5) * 90; py += (rnd() - 0.2) * 70; x.lineTo(px, py); }
+    x.lineWidth = 0.6 + rnd() * 1.6;
+    x.strokeStyle = kind === 'white' ? (rnd() < 0.45 ? 'rgba(196,150,72,0.55)' : 'rgba(120,118,112,0.35)') : (rnd() < 0.4 ? 'rgba(210,170,80,0.45)' : 'rgba(170,175,205,0.35)');
+    x.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
+  return (_marbleCache[kind] = t);
+}
+// 各棋種發光符文色（與 THEME 一致）：兵天藍、騎士翠綠、主教琥珀、城堡紫晶、皇后緋紅、國王金
+
 function buildPiece(type, color) {
   const white = color === 'w';
   const mat = new THREE.MeshStandardMaterial({
-    color: white ? 0xf2ead4 : 0x2c2f44, roughness: white ? 0.38 : 0.32, metalness: white ? 0.12 : 0.45,
-    emissive: white ? 0x1a1608 : 0x0a0b18, emissiveIntensity: 0.6,
+    map: marbleTex(white ? 'white' : 'black'), color: 0xffffff, roughness: white ? 0.3 : 0.26, metalness: white ? 0.02 : 0.22,
+    emissive: white ? 0x2a2820 : 0x0a0b18, emissiveIntensity: white ? 0.7 : 0.55,
   });
-  // 每個棋種有自己的代表色金屬飾件（兵青銅、騎士焰橙、主教紫、城堡鋼藍、皇后桃紅、國王金）
-  const accent = new THREE.MeshStandardMaterial({
-    color: THEME[type], roughness: 0.3, metalness: 0.75, emissive: THEME[type], emissiveIntensity: 0.18,
-  });
-  const glow = new THREE.MeshStandardMaterial({
-    color: THEME[type], emissive: THEME[type], emissiveIntensity: 0.9, roughness: 0.25, metalness: 0.4,
-  });
+  const baseMat = new THREE.MeshStandardMaterial({ map: marbleTex('black'), color: white ? 0xb8bccf : 0xffffff, roughness: 0.35, metalness: 0.2, emissive: 0x0a0b18, emissiveIntensity: 0.5 });
+  const tint = white ? 1 : 0.58;
+  const gold = new THREE.MeshStandardMaterial({ color: new THREE.Color(0xf0bd48).multiplyScalar(tint), roughness: 0.32, metalness: 0.4, emissive: 0x7a5614, emissiveIntensity: white ? 0.4 : 0.28 });
+  const steel = new THREE.MeshStandardMaterial({ color: new THREE.Color(0xeef2f8).multiplyScalar(tint), roughness: 0.34, metalness: 0.3, emissive: 0x5a6578, emissiveIntensity: 0.4 });
+  const glow = new THREE.MeshStandardMaterial({ color: THEME[type], emissive: THEME[type], emissiveIntensity: 1.0, roughness: 0.3, metalness: 0.2 });
   const g = new THREE.Group();
-  const add = (geo, m = mat, x = 0, y = 0, z = 0) => {
+  const add = (geo, m = mat, x = 0, y = 0, z = 0, parent = g) => {
     const mesh = new THREE.Mesh(geo, m);
     mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true;
-    g.add(mesh); return mesh;
+    parent.add(mesh); return mesh;
+  };
+  const torus = (r, t, m, y, parent = g, seg = 32) => { const o = add(new THREE.TorusGeometry(r, t, 8, seg), m, 0, y, 0, parent); o.rotation.x = PI / 2; return o; };
+  const grp = (x, y, z, parent = g) => { const o = new THREE.Group(); o.position.set(x, y, z); parent.add(o); return o; };
+  const sph = (r, m, x, y, z, parent = g) => add(new THREE.SphereGeometry(r, 18, 14), m, x, y, z, parent);
+  const cyl = (rt, rb, h, m, x, y, z, seg = 16, parent = g) => add(new THREE.CylinderGeometry(rt, rb, h, seg), m, x, y, z, parent);
+  const cone = (r, h, m, x, y, z, seg = 10, parent = g) => add(new THREE.ConeGeometry(r, h, seg), m, x, y, z, parent);
+  const box = (w, h, d, m, x, y, z, parent = g) => add(new THREE.BoxGeometry(w, h, d), m, x, y, z, parent);
+  const idle = [];
+  // 底座：深色大理石 + 金/銀邊 + 符文光環
+  const pedestal = (rim, r = 0.42, runeRing = true) => {
+    add(lathe([[0, 0], [r, 0], [r + 0.02, 0.03], [r + 0.02, 0.07], [r - 0.05, 0.1], [0, 0.1]], 36), baseMat);
+    torus(r + 0.01, 0.017, rim, 0.065, g, 40);
+    if (runeRing) torus(r - 0.1, 0.007, glow, 0.104, g, 40);
   };
   switch (type) {
-    case 'P':
-      add(lathe([[0, 0], [0.33, 0], [0.35, 0.05], [0.3, 0.12], [0.2, 0.2], [0.14, 0.34], [0.12, 0.44], [0.2, 0.5], [0.2, 0.54], [0, 0.54]]));
-      add(new THREE.SphereGeometry(0.19, 24, 18), mat, 0, 0.65, 0);
-      break;
-    case 'R': {
-      add(lathe([[0, 0], [0.36, 0], [0.38, 0.06], [0.31, 0.15], [0.23, 0.26], [0.21, 0.55], [0.29, 0.62], [0.31, 0.74], [0, 0.74]]));
-      add(new THREE.TorusGeometry(0.27, 0.035, 10, 32), accent, 0, 0.6, 0).rotation.x = PI / 2;
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * PI * 2;
-        add(new THREE.BoxGeometry(0.11, 0.14, 0.11), mat, Math.sin(a) * 0.24, 0.81, Math.cos(a) * 0.24).rotation.y = a;
+    case 'P': { // 皇家重裝步兵：鋼鎧、天藍符文、左盾右矛
+      pedestal(steel, 0.4);
+      for (const sx of [-1, 1]) {
+        box(0.11, 0.08, 0.2, mat, sx * 0.085, 0.14, -0.03);
+        cyl(0.052, 0.058, 0.17, steel, sx * 0.085, 0.27, 0);
+        sph(0.06, steel, sx * 0.085, 0.37, -0.01); // 護膝
       }
-      break;
-    }
-    case 'B':
-      add(lathe([[0, 0], [0.34, 0], [0.36, 0.06], [0.29, 0.14], [0.18, 0.26], [0.13, 0.5], [0.22, 0.58], [0.22, 0.63], [0.14, 0.68], [0, 0.68]]));
-      add(new THREE.SphereGeometry(0.18, 24, 18), mat, 0, 0.86, 0).scale.set(1, 1.45, 1);
-      add(new THREE.ConeGeometry(0.1, 0.2, 18), accent, 0, 1.12, 0);
-      add(new THREE.TorusGeometry(0.16, 0.03, 10, 28), accent, 0, 0.68, 0).rotation.x = PI / 2;
-      break;
-    case 'N': {
-      add(lathe([[0, 0], [0.35, 0], [0.37, 0.06], [0.3, 0.15], [0.23, 0.24], [0.2, 0.32], [0, 0.32]]));
-      const neck = add(new THREE.BoxGeometry(0.3, 0.66, 0.26), mat, 0, 0.62, 0.04);
-      neck.rotation.x = -0.28;
-      const head = add(new THREE.BoxGeometry(0.24, 0.3, 0.46), mat, 0, 0.96, -0.2);
-      head.rotation.x = 0.42;
-      add(new THREE.BoxGeometry(0.18, 0.2, 0.2), mat, 0, 0.84, -0.46).rotation.x = 0.5;
-      for (const sx of [-1, 1]) add(new THREE.ConeGeometry(0.055, 0.16, 12), mat, sx * 0.08, 1.16, -0.02);
-      add(new THREE.BoxGeometry(0.06, 0.46, 0.12), accent, 0, 0.88, 0.2).rotation.x = -0.35;
-      for (const sx of [-1, 1]) add(new THREE.SphereGeometry(0.03, 8, 8), new THREE.MeshBasicMaterial({ color: white ? 0x222222 : 0xffd34d }), sx * 0.125, 1.0, -0.28);
-      break;
-    }
-    case 'Q':
-      add(lathe([[0, 0], [0.38, 0], [0.4, 0.06], [0.32, 0.15], [0.2, 0.3], [0.14, 0.6], [0.12, 0.88], [0.24, 1.0], [0.27, 1.06], [0, 1.06]]));
-      add(new THREE.TorusGeometry(0.25, 0.04, 10, 36), accent, 0, 1.06, 0).rotation.x = PI / 2;
-      for (let i = 0; i < 7; i++) {
-        const a = (i / 7) * PI * 2;
-        add(new THREE.ConeGeometry(0.045, 0.2, 10), mat, Math.sin(a) * 0.24, 1.18, Math.cos(a) * 0.24);
-        add(new THREE.SphereGeometry(0.04, 10, 10), accent, Math.sin(a) * 0.24, 1.3, Math.cos(a) * 0.24);
-      }
-      add(new THREE.SphereGeometry(0.1, 16, 14), accent, 0, 1.2, 0);
-      add(new THREE.TorusGeometry(0.2, 0.03, 10, 28), accent, 0, 0.32, 0).rotation.x = PI / 2;
-      break;
-    case 'K':
-      add(lathe([[0, 0], [0.4, 0], [0.42, 0.06], [0.34, 0.16], [0.22, 0.32], [0.16, 0.68], [0.14, 0.95], [0.27, 1.06], [0.3, 1.12], [0, 1.12]]));
-      add(new THREE.TorusGeometry(0.27, 0.045, 10, 36), accent, 0, 1.12, 0).rotation.x = PI / 2;
-      add(new THREE.SphereGeometry(0.2, 20, 16, 0, PI * 2, 0, PI / 2), mat, 0, 1.12, 0);
-      add(new THREE.BoxGeometry(0.11, 0.36, 0.11), accent, 0, 1.52, 0);
-      add(new THREE.BoxGeometry(0.3, 0.1, 0.11), accent, 0, 1.5, 0);
-      add(new THREE.TorusGeometry(0.2, 0.03, 10, 28), accent, 0, 0.34, 0).rotation.x = PI / 2;
-      break;
-    default:
-  }
-  // ===== 棋種專屬道具（正面朝 -z） =====
-  const idle = [];
-  switch (type) {
-    case 'P': { // 青銅長槍
+      cyl(0.16, 0.19, 0.3, mat, 0, 0.55, 0, 18);
+      const bp = cyl(0.172, 0.205, 0.25, steel, 0, 0.55, 0, 18); bp.scale.z = 0.95;
+      for (const y of [0.47, 0.57, 0.65]) torus(0.186, 0.007, glow, y);
+      torus(0.2, 0.02, steel, 0.4);
+      for (const sx of [-1, 1]) { sph(0.085, steel, sx * 0.21, 0.67, 0); add(new THREE.TorusGeometry(0.07, 0.007, 6, 20), glow, sx * 0.21, 0.67, -0.04); }
+      sph(0.125, mat, 0, 0.84, 0);
+      const helm = add(new THREE.SphereGeometry(0.15, 20, 14, 0, PI * 2, 0, PI * 0.66), steel, 0, 0.84, 0);
+      box(0.17, 0.075, 0.06, steel, 0, 0.82, -0.115);
+      for (let i = -2; i <= 2; i++) box(0.012, 0.045, 0.01, new THREE.MeshBasicMaterial({ color: 0x080a14 }), i * 0.03, 0.82, -0.148);
+      const plume = add(new THREE.CapsuleGeometry(0.035, 0.16, 4, 10), mat, 0, 0.98, 0.17); plume.rotation.x = 1.15;
+      // 左盾（朝外）
+      const sh = cyl(0.16, 0.16, 0.03, steel, -0.26, 0.5, -0.04, 28); sh.rotation.z = PI / 2; sh.rotation.y = 0.25;
+      const shr = add(new THREE.TorusGeometry(0.12, 0.009, 6, 28), glow, -0.28, 0.5, -0.04); shr.rotation.y = PI / 2 - 0.25;
+      sph(0.045, gold, -0.285, 0.5, -0.04);
+      // 右矛
       const spear = new THREE.Group();
-      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.95, 8), new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.7 }));
-      shaft.position.y = 0.47; spear.add(shaft);
-      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.16, 8), glow); tip.position.y = 1.02; spear.add(tip);
-      spear.position.set(0.27, 0, -0.05); spear.rotation.z = -0.12;
+      const stripe = new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 0.4, metalness: 0.6 });
+      cyl(0.017, 0.017, 1.0, steel, 0, 0.55, 0, 8, spear);
+      for (let i = 0; i < 6; i++) cyl(0.019, 0.019, 0.06, stripe, 0, 0.2 + i * 0.12, 0, 8, spear);
+      cone(0.042, 0.2, steel, 0, 1.14, 0, 8, spear);
+      torus(0.03, 0.006, glow, 1.04, spear, 14);
+      spear.position.set(0.28, 0.05, -0.06); spear.rotation.z = -0.1;
       spear.traverse((o) => { if (o.isMesh) o.castShadow = true; });
       g.add(spear); g.userData.weapon = spear;
+      idle.push({ kind: 'flicker', obj: shr });
       break;
     }
-    case 'N': { // 焰色鬃毛發光
-      const mane = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.42, 0.1), glow);
-      mane.position.set(0, 0.92, 0.17); mane.rotation.x = -0.35; g.add(mane);
-      idle.push({ kind: 'flicker', obj: mane });
-      break;
-    }
-    case 'B': { // 漂浮光環
-      const halo = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.022, 8, 32), glow);
-      halo.rotation.x = PI / 2; halo.position.y = 1.34; g.add(halo);
-      idle.push({ kind: 'halo', obj: halo, y: 1.34 });
-      break;
-    }
-    case 'R': { // 正面六角盾徽
-      const shield = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.04, 6), accent);
-      shield.rotation.x = PI / 2; shield.position.set(0, 0.42, -0.24); g.add(shield);
-      const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.05), glow); gem.position.set(0, 0.42, -0.27); g.add(gem);
-      break;
-    }
-    case 'Q': { // 背後交叉雙刃
-      for (const s of [-1, 1]) {
-        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.72, 0.08), glow);
-        blade.position.set(s * 0.1, 0.78, 0.2); blade.rotation.z = s * 0.45; blade.castShadow = true; g.add(blade);
+    case 'N': { // 翡翠龍騎戰馬：大理石馬身 + 銀甲 + 翠綠符文 + 側掛騎槍
+      pedestal(steel, 0.4);
+      cyl(0.29, 0.33, 0.12, mat, 0, 0.16, 0, 28);
+      torus(0.3, 0.012, steel, 0.215, g, 32);
+      const chest = sph(0.27, mat, 0, 0.5, 0.04); chest.scale.set(0.95, 1.0, 1.15);
+      sph(0.2, mat, 0, 0.4, 0.2);
+      for (const sx of [-1, 1]) { const leg = cyl(0.055, 0.04, 0.3, mat, sx * 0.1, 0.35, -0.22); leg.rotation.x = -0.5; }
+      // 胸甲
+      const shell = add(new THREE.SphereGeometry(0.295, 20, 12, 3.61, 2.2, 0.55, 1.5), steel, 0, 0.5, 0.04); shell.scale.set(0.95, 1.0, 1.15);
+      for (const [x, y] of [[-0.09, 0.5], [0.09, 0.5], [0, 0.43]]) box(0.04, 0.05, 0.012, glow, x, y, -0.305);
+      // 頸（朝 -z 前傾）
+      const neck = grp(0, 0.84, -0.13); neck.rotation.x = -0.5;
+      cyl(0.1, 0.17, 0.55, mat, 0, 0, 0, 14, neck);
+      for (let i = 0; i < 5; i++) {
+        const y = -0.2 + i * 0.1;
+        box(0.12 - i * 0.008, 0.085, 0.05, steel, 0, y, 0.125, neck);
+        box(0.05, 0.03, 0.012, glow, 0, y, 0.155, neck);
       }
+      // 頭
+      const head = grp(0, 1.0, -0.43); head.rotation.x = -(PI / 2 + 0.4);
+      cyl(0.07, 0.115, 0.38, mat, 0, 0, 0, 14, head);
+      box(0.1, 0.3, 0.03, steel, 0, 0.0, 0.105, head);
+      box(0.05, 0.12, 0.012, glow, 0, 0.06, 0.125, head);
+      box(0.15, 0.04, 0.14, steel, 0, -0.1, 0.07, head);
+      for (const sx of [-1, 1]) {
+        const ear = cone(0.032, 0.12, mat, sx * 0.065, -0.17, 0.1, 10, head); ear.rotation.x = PI / 2 - 0.3;
+        add(new THREE.SphereGeometry(0.02, 8, 8), new THREE.MeshBasicMaterial({ color: 0x22303a }), sx * 0.105, -0.06, 0.02, head);
+      }
+      // 側掛騎槍
+      const lance = grp(0.3, 0.62, 0.0); lance.rotation.x = -(PI / 2 + 0.18); lance.rotation.z = 0.12;
+      cyl(0.024, 0.024, 1.25, steel, 0, 0, 0, 10, lance);
+      cone(0.034, 0.22, steel, 0, 0.73, 0, 10, lance);
+      cyl(0.03, 0.075, 0.2, steel, 0, 0.18, 0, 12, lance);
+      torus(0.06, 0.007, glow, 0.1, lance, 16).rotation.x = PI / 2;
+      idle.push({ kind: 'flicker', obj: box(0.05, 0.03, 0.012, glow, 0, 0.0, 0.17, neck) });
       break;
     }
-    case 'K': { // 深紅披風
-      const cape = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.36, 0.72, 20, 1, true, -PI / 2, PI),
-        new THREE.MeshStandardMaterial({ color: 0x8e1a2e, roughness: 0.6, side: THREE.DoubleSide, emissive: 0x2a0008 }));
-      cape.position.y = 0.66; cape.castShadow = true; g.add(cape);
-      const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.06), glow); gem.position.set(0, 1.5, -0.07); g.add(gem);
+    case 'B': { // 聖光大賢者：金邊法袍、主教冠、琥珀水晶法杖
+      pedestal(gold, 0.4);
+      add(lathe([[0, 0.1], [0.31, 0.1], [0.33, 0.16], [0.27, 0.32], [0.2, 0.62], [0.17, 0.82], [0.2, 0.9], [0, 0.94]], 28), mat);
+      torus(0.325, 0.02, gold, 0.17, g, 36);
+      box(0.11, 0.62, 0.03, gold, 0, 0.5, -0.23).rotation.x = 0.16;
+      for (const sx of [-1, 1]) box(0.012, 0.6, 0.032, glow, sx * 0.03, 0.5, -0.232).rotation.x = 0.16;
+      torus(0.19, 0.025, gold, 0.6, g, 28);
+      torus(0.21, 0.035, gold, 0.9, g, 28);
+      for (const sx of [-1, 1]) { sph(0.08, mat, sx * 0.2, 0.86, 0); torus(0.075, 0.012, gold, 0.86, g, 14).position.x = sx * 0.2; }
+      sph(0.13, mat, 0, 1.03, 0);
+      const beard = cone(0.1, 0.26, new THREE.MeshStandardMaterial({ color: white ? 0xe3d8c0 : 0x585a70, roughness: 0.5 }), 0, 0.88, -0.09, 12); beard.rotation.x = PI + 0.15;
+      add(new THREE.CylinderGeometry(0.07, 0.15, 0.34, 18), mat, 0, 1.3, 0);
+      torus(0.15, 0.022, gold, 1.15, g, 24);
+      const fin = cone(0.11, 0.3, gold, 0, 1.35, 0.1, 3); fin.scale.set(1, 1, 0.35);
+      sph(0.028, glow, 0, 1.24, -0.12);
+      cone(0.04, 0.1, gold, 0, 1.5, 0, 8);
+      // 袖與手
+      for (const sx of [-1, 1]) { const sl = cyl(0.06, 0.09, 0.34, mat, sx * 0.24, 0.66, -0.03, 12); sl.rotation.z = sx * 0.12; sph(0.045, mat, sx * 0.26, 0.48, -0.04); }
+      // 法杖（左手）
+      const staff = grp(-0.32, 0, -0.07);
+      cyl(0.022, 0.022, 1.3, gold, 0, 0.75, 0, 8, staff);
+      for (let i = 0; i < 4; i++) torus(0.03, 0.007, gold, 0.4 + i * 0.12, staff, 10);
+      const ring = add(new THREE.TorusGeometry(0.13, 0.02, 8, 24), gold, 0, 1.55, 0, staff);
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * PI * 2; const th = cone(0.016, 0.09, gold, Math.cos(a) * 0.15, 1.55 + Math.sin(a) * 0.15, 0, 6, staff); th.rotation.z = a - PI / 2; }
+      const gem = add(new THREE.IcosahedronGeometry(0.07, 0), glow, 0, 1.55, 0, staff);
       idle.push({ kind: 'pulse', obj: gem });
+      break;
+    }
+    case 'R': { // 符文重裝巨塔：八角石塔、紫晶核心
+      add(lathe([[0, 0], [0.43, 0], [0.45, 0.05], [0.41, 0.1], [0.34, 0.15], [0, 0.15]], 36), baseMat);
+      torus(0.44, 0.02, gold, 0.06, g, 40);
+      torus(0.36, 0.008, glow, 0.155, g, 40);
+      const oct = (rt, rb, h, m, y) => { const o = cyl(rt, rb, h, m, 0, y, 0, 8); o.rotation.y = PI / 8; return o; };
+      oct(0.285, 0.33, 0.34, mat, 0.32);
+      for (const y of [0.22, 0.34, 0.44]) { const o = oct(0.322 - (y - 0.22) * 0.1, 0.322 - (y - 0.22) * 0.1, 0.012, baseMat, y); }
+      for (let i = 0; i < 4; i++) box(0.05, 0.1, 0.02, new THREE.MeshBasicMaterial({ color: 0x1a1230 }), Math.sin((i - 1.5) * 0.25 * PI) * 0.3, 0.3, -Math.cos((i - 1.5) * 0.25 * PI) * 0.3).rotation.y = (i - 1.5) * 0.25 * PI;
+      oct(0.31, 0.3, 0.03, steel, 0.5);
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * PI * 2 + PI / 8; cyl(0.024, 0.024, 0.24, mat, Math.sin(a) * 0.26, 0.64, Math.cos(a) * 0.26, 8); }
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * PI * 2 + PI / 8; sph(0.03, mat, Math.sin(a) * 0.26, 0.77, Math.cos(a) * 0.26); }
+      const crystal = add(new THREE.IcosahedronGeometry(0.13, 0), glow, 0, 0.64, 0); crystal.scale.set(0.9, 1.35, 0.9);
+      idle.push({ kind: 'pulse', obj: crystal });
+      torus(0.27, 0.006, glow, 0.52, g, 8);
+      oct(0.3, 0.3, 0.03, mat, 0.78);
+      oct(0.335, 0.29, 0.2, mat, 0.89);
+      oct(0.355, 0.35, 0.05, mat, 1.01);
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * PI * 2; const m = box(0.13, 0.11, 0.07, mat, Math.sin(a) * 0.31, 1.1, Math.cos(a) * 0.31); m.rotation.y = a; }
+      for (let i = 0; i < 4; i++) { const a = (i / 4) * PI * 2 + PI / 4; const gar = cone(0.04, 0.12, mat, Math.sin(a) * 0.36, 0.9, Math.cos(a) * 0.36, 6); gar.rotation.x = Math.cos(a) * PI / 2.2; gar.rotation.z = -Math.sin(a) * PI / 2.2; }
+      break;
+    }
+    case 'Q': { // 緋紅雙刃女武神：白金戰裙、羽翼、盾與權杖、背後雙刃
+      pedestal(gold, 0.42);
+      add(lathe([[0, 0.1], [0.35, 0.1], [0.37, 0.15], [0.31, 0.3], [0.21, 0.55], [0.14, 0.78], [0.16, 0.88], [0, 0.92]], 32), mat);
+      torus(0.355, 0.02, gold, 0.16, g, 40);
+      const panel = box(0.12, 0.6, 0.025, gold, 0, 0.45, -0.24); panel.rotation.x = 0.2;
+      for (const sx of [-1, 1]) { const p2 = box(0.02, 0.5, 0.02, glow, sx * 0.075, 0.45, -0.235); p2.rotation.x = 0.2; }
+      torus(0.145, 0.022, gold, 0.76, g, 24);
+      torus(0.16, 0.03, gold, 0.9, g, 24);
+      for (const sx of [-1, 1]) { sph(0.07, mat, sx * 0.16, 0.9, 0); torus(0.065, 0.011, gold, 0.9, g, 14).position.x = sx * 0.16; }
+      // 翅膀
+      for (const sx of [-1, 1]) {
+        const wing = grp(sx * 0.12, 0.97, 0.1); wing.rotation.x = 0.35;
+        for (let i = 0; i < 4; i++) {
+          const geo = new THREE.BoxGeometry(0.055, 0.3 - i * 0.025, 0.014); geo.translate(0, (0.3 - i * 0.025) / 2, 0);
+          const f = new THREE.Mesh(geo, mat); f.castShadow = true; f.rotation.z = -sx * (0.25 + i * 0.3); wing.add(f);
+          const eg = new THREE.BoxGeometry(0.058, 0.02, 0.018); eg.translate(0, 0.3 - i * 0.025, 0);
+          const e = new THREE.Mesh(eg, gold); e.rotation.z = f.rotation.z; wing.add(e);
+        }
+      }
+      sph(0.12, mat, 0, 1.03, 0);
+      sph(0.115, mat, 0, 1.02, 0.045);
+      for (const sx of [-1, 1]) { const br = add(new THREE.CapsuleGeometry(0.028, 0.18, 4, 8), mat, sx * 0.1, 0.9, -0.04); br.rotation.z = sx * 0.1; }
+      torus(0.118, 0.016, gold, 1.12, g, 24);
+      for (let i = 0; i < 5; i++) { const a = (i / 5) * PI * 2; const sp = cone(0.032, 0.2, mat, Math.sin(a) * 0.115, 1.23, Math.cos(a) * 0.115, 8); sp.rotation.x = Math.cos(a) * 0.18; sp.rotation.z = -Math.sin(a) * 0.18; sph(0.012, gold, Math.sin(a) * 0.125, 1.33, Math.cos(a) * 0.125); }
+      // 盾（右）與權杖（左）
+      const sh = cyl(0.15, 0.15, 0.03, mat, 0.27, 0.62, -0.02, 28); sh.rotation.z = PI / 2; sh.rotation.y = 0.2;
+      const shr = add(new THREE.TorusGeometry(0.15, 0.014, 8, 28), gold, 0.285, 0.62, -0.02); shr.rotation.y = PI / 2 - 0.2;
+      sph(0.04, glow, 0.3, 0.62, -0.02);
+      const sc = grp(-0.27, 0, -0.1);
+      cyl(0.016, 0.016, 0.8, mat, 0, 0.5, 0, 8, sc);
+      sph(0.038, gold, 0, 0.93, 0, sc);
+      cone(0.03, 0.08, gold, 0, 0.99, 0, 8, sc);
+      for (const sx of [-1, 1]) sph(0.04, mat, sx * 0.22, 0.65, -0.05).scale.set(1, 1, 1);
+      // 背後緋紅雙刃
+      const blades = [];
+      for (const s of [-1, 1]) {
+        const bl = grp(s * 0.36, 0.95, 0.12); bl.rotation.z = -s * 0.6; bl.rotation.x = 0.15;
+        const geo = new THREE.BoxGeometry(0.075, 0.7, 0.025); geo.translate(0, 0.37, 0);
+        const b = new THREE.Mesh(geo, glow); b.castShadow = true; bl.add(b); blades.push(b);
+        const tip = cone(0.0375, 0.14, glow, 0, 0.77, 0, 4, bl); tip.scale.z = 0.35;
+        box(0.2, 0.03, 0.04, gold, 0, 0.0, 0, bl);
+        cyl(0.018, 0.018, 0.14, gold, 0, -0.08, 0, 8, bl);
+      }
+      idle.push({ kind: 'flicker', obj: blades[0] });
+      break;
+    }
+    case 'K': { // 黃金聖盾君王：金斗篷、十字帝冠、胸前聖盾
+      pedestal(gold, 0.44);
+      add(lathe([[0, 0.1], [0.36, 0.1], [0.38, 0.15], [0.3, 0.35], [0.22, 0.7], [0.18, 0.95], [0.22, 1.03], [0, 1.07]], 32), mat);
+      for (const sx of [-1, 0, 1]) { const st = box(sx ? 0.03 : 0.07, 0.62, 0.02, gold, sx * 0.1, 0.46, -0.27 + Math.abs(sx) * 0.015); st.rotation.x = 0.17; }
+      torus(0.37, 0.02, gold, 0.16, g, 40);
+      torus(0.2, 0.025, gold, 0.62, g, 28);
+      // 披風
+      const capeMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0xf0bd48).multiplyScalar(white ? 1 : 0.62), roughness: 0.4, metalness: 0.4, emissive: 0x7a5614, emissiveIntensity: 0.4, side: THREE.DoubleSide });
+      const cape = add(new THREE.CylinderGeometry(0.27, 0.44, 0.95, 28, 1, true, -2.25, 4.5), capeMat, 0, 0.62, 0.02);
+      const train = add(new THREE.CylinderGeometry(0.44, 0.52, 0.06, 28, 1, true, -1.4, 2.8), capeMat, 0, 0.15, 0.1);
+      for (const sx of [-2, -1, 0, 1, 2]) { // 披風背面金繡紋
+        const em = box(sx % 2 ? 0.035 : 0.06, 0.78, 0.012, gold, sx * 0.1, 0.6, 0.0); em.rotation.x = -0.18;
+        em.position.z = 0.02 + 0.36 + Math.abs(sx) * -0.02 + 0.006; em.rotation.y = -sx * 0.27; em.position.x = Math.sin(sx * 0.27) * 0.37;
+        em.position.z = 0.02 + Math.cos(sx * 0.27) * 0.37;
+      }
+      for (const sx of [-1, 1]) { sph(0.045, gold, sx * 0.21, 1.0, -0.07); sph(0.085, mat, sx * 0.17, 0.97, 0.0).scale.set(1, 0.8, 1); }
+      const chain = add(new THREE.TorusGeometry(0.2, 0.01, 6, 24, PI), gold, 0, 0.98, -0.07); chain.rotation.z = PI; chain.scale.set(1, 0.7, 1);
+      // 胸前聖盾
+      const sp = new THREE.Shape();
+      sp.moveTo(-0.075, 0.085); sp.lineTo(0.075, 0.085); sp.lineTo(0.075, 0.0); sp.quadraticCurveTo(0.075, -0.07, 0, -0.105); sp.quadraticCurveTo(-0.075, -0.07, -0.075, 0.0); sp.closePath();
+      const shield = add(new THREE.ExtrudeGeometry(sp, { depth: 0.018, bevelEnabled: true, bevelSize: 0.008, bevelThickness: 0.008, bevelSegments: 1 }), glow, 0, 0.8, -0.245);
+      shield.rotation.y = PI; shield.position.z = -0.215;
+      idle.push({ kind: 'pulse', obj: shield });
+      for (const sx of [-1, 1]) { const sl = cyl(0.06, 0.09, 0.32, mat, sx * 0.24, 0.72, -0.02, 12); sl.rotation.z = sx * 0.2; sph(0.05, mat, sx * 0.29, 0.54, -0.02); }
+      sph(0.135, mat, 0, 1.17, 0);
+      for (const sx of [-1, 1]) sph(0.085, mat, sx * 0.1, 1.1, 0.03);
+      const beard = cone(0.11, 0.24, mat, 0, 1.03, -0.1, 12); beard.rotation.x = PI + 0.1;
+      // 帝冠
+      cyl(0.165, 0.15, 0.1, gold, 0, 1.31, 0, 24).material = gold;
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * PI * 2; cone(0.022, 0.12, gold, Math.sin(a) * 0.16, 1.41, Math.cos(a) * 0.16, 6); }
+      for (const ry of [0, PI / 2]) { const arc = add(new THREE.TorusGeometry(0.15, 0.013, 8, 20, PI), gold, 0, 1.36, 0); arc.rotation.y = ry; }
+      sph(0.035, gold, 0, 1.52, 0);
+      box(0.03, 0.11, 0.03, gold, 0, 1.6, 0);
+      box(0.08, 0.026, 0.03, gold, 0, 1.62, 0);
       break;
     }
     default:
@@ -445,7 +587,7 @@ export class View {
     const lv = Math.min(3, piece.kills);
     if (rec.sprite) rec.group.remove(rec.sprite);
     const sp = makeLabel(NAMES[piece.type], titleOf(piece), lv, piece.color === 'w');
-    const PROP = { P: 0.25, N: 0.3, B: 0.5, R: 0.2, Q: 0.55, K: 0.6 }[piece.type];
+    const PROP = { P: 0.12, N: 0.1, B: 0.12, R: 0.12, Q: 0.15, K: 0.15 }[piece.type];
     sp.position.y = rec.h + PROP + (lv >= 3 ? 0.7 : lv ? 0.2 : 0);
     rec.group.add(sp); rec.sprite = sp;
     if (rec.ring) rec.group.remove(rec.ring);

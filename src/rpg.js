@@ -26,8 +26,8 @@ export const SKILL = {
   Q: { name: '女王連斬', role: '雙刃女王', move: '浮空滑行，灑落桃紅星光', desc: '旋身揮出兩道刀光，每次行動連擊兩次' },
   K: { name: '王者裁決', role: '王權守護', move: '莊重緩步，落腳處綻放金環', desc: '金色權杖裁決；瀕危時展開 25 點王之護盾' },
 };
-export const THEME = { P: 0xc8894a, N: 0xff8a2a, B: 0xb47bff, R: 0x6fb8ff, Q: 0xff5fb0, K: 0xffd34d };
-export const THEME_CSS = { P: '#e0a466', N: '#ff9a45', B: '#c79bff', R: '#8ccaff', Q: '#ff7fc2', K: '#ffd54a' };
+export const THEME = { P: 0x44c8ff, N: 0x2fe6a0, B: 0xffa63a, R: 0xb468ff, Q: 0xff4a78, K: 0xffd34d };
+export const THEME_CSS = { P: '#6fd6ff', N: '#4df0b0', B: '#ffb85c', R: '#c690ff', Q: '#ff6b8e', K: '#ffd54a' };
 
 export const GROWTH = {
   P: [8, 3, 1], N: [14, 5, 2], B: [14, 5, 2], R: [20, 7, 3], Q: [30, 12, 5],

@@ -12,5 +12,5 @@ await ev(()=>{__api.onPick(5,5); __api.onPick(3,4);}); await sleep(1500);
 await ev(()=>{const q=__G.curQ; const w=[0,1,2,3].find(i=>i!==q.ans); document.querySelectorAll('#qOpts button')[w].click();}); await sleep(300);
 await page.click('#qGo'); await idle(); await sleep(3000);
 console.log('leftover after duel turn:', await extra(), 'fx', await ev(()=>__view.fx.length));
-await ev(()=>{__api.onPick(0,1); __api.onPick(2,2);}); await idle(); await sleep(3000);
+await ev(()=>{__api.onPick(0,1); __api.onPick(2,2);}); await idle(); await sleep(12000);
 console.log('leftover after normal move:', await extra()); console.log(errs); await browser.close();
