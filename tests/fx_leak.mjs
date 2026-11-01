@@ -1,0 +1,16 @@
+import puppeteer from 'puppeteer-core'; import path from 'node:path';
+const browser=await puppeteer.launch({executablePath:'/usr/bin/google-chrome',headless:'new',protocolTimeout:120000,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist'],defaultViewport:{width:1000,height:640}});
+const page=await browser.newPage(); const errs=[]; page.on('pageerror',e=>errs.push(e.message));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms)); const ev=(f,...a)=>page.evaluate(f,...a);
+await page.goto('file://'+path.resolve('dist/debug.html')); await sleep(1500); await page.click('#introGo'); await sleep(300);
+await ev(()=>{document.getElementById('selMode').value='2p'; document.getElementById('selMode').dispatchEvent(new Event('change'));}); await sleep(500);
+const extra=()=>ev(()=>{const v=__view; const pc=new Set([...v.pieces.values()].map(r=>r.group)); return v.scene.children.filter(o=>!v._base.has(o)&&!pc.has(o)).length;});
+const idle=()=>page.waitForFunction(()=>__G.phase==='idle',{timeout:60000});
+await ev(()=>{__api.onPick(7,6); __api.onPick(5,5);}); await idle();
+await ev(()=>{__api.onPick(1,4); __api.onPick(3,4);}); await idle();
+await ev(()=>{__api.onPick(5,5); __api.onPick(3,4);}); await sleep(1500);
+await ev(()=>{const q=__G.curQ; const w=[0,1,2,3].find(i=>i!==q.ans); document.querySelectorAll('#qOpts button')[w].click();}); await sleep(300);
+await page.click('#qGo'); await idle(); await sleep(3000);
+console.log('leftover after duel turn:', await extra(), 'fx', await ev(()=>__view.fx.length));
+await ev(()=>{__api.onPick(0,1); __api.onPick(2,2);}); await idle(); await sleep(3000);
+console.log('leftover after normal move:', await extra()); console.log(errs); await browser.close();

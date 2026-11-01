@@ -1,0 +1,25 @@
+# 智策棋鋒 Chess Trivia RPG
+
+西洋棋 × 國小題庫 × 3D RPG 對決。單檔 HTML（Three.js 已內嵌，不連外部網路）。
+
+## 直接遊玩 / 部署
+根目錄的 `index.html` 就是完整遊戲，任何靜態伺服器都能跑：
+
+    python3 -m http.server 8080 --bind 0.0.0.0
+
+瀏覽 `http://<主機 IP>:8080`。
+
+## Mac mini 開機自動啟動
+1. 把 repo 放在 `~/apps/chess-trivia`
+2. 編輯 `deploy/com.chesstrivia.web.plist`，把 `YOURNAME` 換成你的 macOS 使用者名稱
+3. 執行：
+
+        cp deploy/com.chesstrivia.web.plist ~/Library/LaunchAgents/
+        launchctl load ~/Library/LaunchAgents/com.chesstrivia.web.plist
+
+更新：`git pull` 即可（靜態檔，不用重啟）。
+
+## 開發
+    npm install
+    node build.mjs        # 產生 dist/chess-trivia-rpg-3d.html
+    cp dist/chess-trivia-rpg-3d.html index.html

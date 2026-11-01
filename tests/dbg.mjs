@@ -1,0 +1,12 @@
+import puppeteer from 'puppeteer-core'; import path from 'node:path';
+const file='file://'+path.resolve('dist/chess-trivia-rpg-3d.html');
+const browser=await puppeteer.launch({executablePath:'/usr/bin/google-chrome',headless:'new',protocolTimeout:60000,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist'],defaultViewport:{width:1280,height:800}});
+const page=await browser.newPage(); page.on('pageerror',e=>console.log('PAGEERR',e.message)); page.on('console',m=>console.log('C:',m.text()));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+await page.goto(file); await sleep(1500); await page.click('#introGo');
+const t=async(n,f)=>{const t0=Date.now(); try{ const r=await Promise.race([page.evaluate(f), sleep(20000).then(()=>'TIMEOUT')]); console.log(n,Date.now()-t0,'ms',JSON.stringify(r)); }catch(e){console.log(n,'ERR',e.message)}};
+await t('fps',()=>new Promise(res=>{let n=0;const t0=performance.now();const f=()=>{n++; if(performance.now()-t0>2000) res(n/2); else requestAnimationFrame(f)};requestAnimationFrame(f)}));
+await t('newGame',()=>{__api.newGame();return 1});
+await t('setup',()=>{const b=__G.st.board; const bp=b[1][4]; b[1][4]=null; b[5][4]=bp; __view.syncAll(b); __G.st.hist.clear(); return 1});
+await t('refresh',()=>{__api.refreshTurn(); return __G.moves.length});
+await browser.close();

@@ -1,0 +1,12 @@
+import puppeteer from 'puppeteer-core'; import path from 'node:path';
+const file='file://'+path.resolve('dist/debug.html');
+const browser=await puppeteer.launch({executablePath:'/usr/bin/google-chrome',headless:'new',protocolTimeout:30000,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist'],defaultViewport:{width:900,height:560}});
+const page=await browser.newPage(); page.on('pageerror',e=>console.log('PAGEERR',e.message));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+await page.goto(file); await sleep(1500); await page.click('#introGo');
+await page.evaluate(()=>{const b=__G.st.board; const bp=b[1][4]; b[1][4]=null; b[5][4]=bp; __view.syncAll(b); __G.st.hist.clear(); __api.refreshTurn(); setTimeout(()=>{__api.onPick(6,3); __api.onPick(5,4);},50); return 1});
+await sleep(4000);
+const cdp=await page.createCDPSession(); await cdp.send('Debugger.enable');
+cdp.on('Debugger.paused',e=>{ console.log('PAUSED'); for(const f of e.callFrames.slice(0,8)) console.log(' ',f.functionName,f.location.lineNumber+1); process.exit(0); });
+await cdp.send('Debugger.pause'); await sleep(8000);
+console.log('no pause event'); await browser.close();

@@ -1,0 +1,17 @@
+import puppeteer from 'puppeteer-core'; import path from 'node:path';
+const file='file://'+path.resolve('dist/chess-trivia-rpg-3d.html');
+const browser=await puppeteer.launch({executablePath:'/usr/bin/google-chrome',headless:'new',protocolTimeout:60000,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist'],defaultViewport:{width:900,height:560}});
+const page=await browser.newPage(); page.on('pageerror',e=>console.log('PAGEERR',e.message));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+await page.goto(file); await sleep(1500); await page.click('#introGo');
+const t=async(n,f)=>{const t0=Date.now(); try{ const r=await Promise.race([page.evaluate(f), sleep(25000).then(()=>'TIMEOUT')]); console.log(n,Date.now()-t0,'ms',JSON.stringify(r)); }catch(e){console.log(n,'ERR',e.message)}};
+await t('level',()=>{__G.level='easy'; __api.onPick(6,4); return __G.sel});
+await t('move',()=>{__api.onPick(4,4); return __G.phase});
+await page.waitForFunction(()=>__G.phase==='idle'&&__G.st.turn==='w',{timeout:30000}); console.log('idle');
+await t('newGame',()=>{__api.newGame(); return __G.phase});
+await t('read',()=>({pieces:__view.pieces.size,tweens:__view.tweens.length,fx:__view.fx.length}));
+await t('setup',()=>{const b=__G.st.board; const bp=b[1][4]; b[1][4]=null; b[5][4]=bp; return 1});
+await t('sync',()=>{__view.syncAll(__G.st.board); return 1});
+await t('hist',()=>{__G.st.hist.clear(); return 1});
+await t('refresh',()=>{__api.refreshTurn(); return __G.moves.length});
+await browser.close();

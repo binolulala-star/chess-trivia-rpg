@@ -1,0 +1,11 @@
+import { build } from 'esbuild';
+import fs from 'node:fs';
+const dbg = !!process.env.DEBUG;
+const out = await build({ entryPoints:['src/main.js'], bundle:true, minify:!dbg, format:'iife', target:'es2020', write:false, legalComments:'none' });
+let js = out.outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
+const tpl = fs.readFileSync('src/index.template.html','utf8');
+const html = tpl.replace('<script>/*BUNDLE*/</script>', () => '<script>'+js+'</script>');
+fs.mkdirSync('dist',{recursive:true});
+const dest = dbg ? 'dist/debug.html' : 'dist/chess-trivia-rpg-3d.html';
+fs.writeFileSync(dest, html);
+console.log('built', dest, (html.length/1024).toFixed(0)+' KB');

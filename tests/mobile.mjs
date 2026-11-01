@@ -1,0 +1,11 @@
+import puppeteer from 'puppeteer-core'; import path from 'node:path'; import fs from 'node:fs';
+const file='file://'+path.resolve('dist/chess-trivia-rpg-3d.html'); const out='/tmp/sim/shots3'; fs.mkdirSync(out,{recursive:true});
+const browser=await puppeteer.launch({executablePath:'/usr/bin/google-chrome',headless:'new',protocolTimeout:60000,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist'],defaultViewport:{width:390,height:780,isMobile:true,hasTouch:true,deviceScaleFactor:1}});
+const page=await browser.newPage(); const errs=[]; page.on('pageerror',e=>errs.push(e.message));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+await page.goto(file); await sleep(1500); await page.screenshot({path:out+'/m1_intro.png'});
+await page.click('#introGo'); await sleep(1500); await page.screenshot({path:out+'/m2_board.png'});
+await page.evaluate(()=>{const b=__G.st.board; const bp=b[1][4]; b[1][4]=null; b[5][4]=bp; __view.syncAll(b); __G.st.hist.clear(); __api.refreshTurn(); __api.onPick(6,3); __api.onPick(5,4);});
+await sleep(3500); await page.screenshot({path:out+'/m3_quiz.png'});
+console.log('errs',JSON.stringify(errs));
+await browser.close();

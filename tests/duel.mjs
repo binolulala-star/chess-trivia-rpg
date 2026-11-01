@@ -1,0 +1,20 @@
+import { resolveDuel, QuizDeck, grantKill, statsOf } from '../src/rpg.js';
+import { QUESTIONS } from '../src/questions.js';
+import { createPiece } from '../src/chess.js';
+const mk=(t,kills=[],)=>{const p=createPiece(t,'w'); kills.forEach(k=>grantKill(p,k)); return p;};
+const wr=(a,d,ctx={},n=4000)=>{let w=0;for(let i=0;i<n;i++) if(resolveDuel(a,d,{attFriend:false,defFriend:false,...ctx},i*7919+1).winner==='att') w++; return +(w/n*100).toFixed(1);};
+console.log('P vs P no friend',wr(mk('P'),mk('P')),'(exp 0)');
+console.log('P vs P friend',wr(mk('P'),mk('P'),{attFriend:true}),'(exp 100)');
+console.log('N vs N',wr(mk('N'),mk('N')),'(exp ~14.9)');
+console.log('N Lv3(P,P,P?) vs R', wr(mk('N',['R','R','R']),mk('R')),'(exp 100)');
+console.log('N Lv2 PP vs R', wr(mk('N',['P','P']),mk('R')),'(exp ~27.9)');
+console.log('P Lv3 NNN vs N', wr(mk('P',['N','N','N']),mk('N')),'(exp ~72.2)');
+console.log('Q vs K',wr(mk('Q'),mk('K')),'(exp 100)', 'K vs Q', wr(mk('K'),mk('Q')),'(exp 0)');
+// 題庫
+const ids=new Set(QUESTIONS.map(q=>q.id)); console.log('questions',QUESTIONS.length,'unique',ids.size);
+const by={}; QUESTIONS.forEach(q=>by[q.piece]=(by[q.piece]||0)+1); console.log(by);
+let bad=QUESTIONS.filter(q=>q.opts.length!==4||q.ans<0||q.ans>3||new Set(q.opts).size!==4); console.log('bad',bad.map(b=>b.id));
+const dist=[0,0,0,0]; QUESTIONS.forEach(q=>dist[q.ans]++); console.log('answer dist',dist);
+const deck=new QuizDeck(QUESTIONS); const seen=new Set(); for(let i=0;i<10;i++) seen.add(deck.draw('B',{grade:'mixed',full:5}).id); console.log('bag draws 10 unique',seen.size);
+const d5=new QuizDeck(QUESTIONS); const g=new Set(); for(let i=0;i<20;i++) g.add(d5.draw('P',{grade:'5',full:5}).grade); console.log('grade5 only',[...g]);
+const q=deck.draw('K',{}); console.log(q.id, q.opts[q.ans]===QUESTIONS.find(x=>x.id===q.id).opts[QUESTIONS.find(x=>x.id===q.id).ans]);
