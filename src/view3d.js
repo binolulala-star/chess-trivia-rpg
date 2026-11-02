@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { titleOf, NAMES, THEME, SKILL } from './rpg.js';
 import { ART } from './art.js';
+import { VIEWS } from './views.js';
 
 const PI = Math.PI;
 export const sqPos = (r, c) => new THREE.Vector3(c - 3.5, 0, r - 3.5);
@@ -285,41 +286,58 @@ function buildPiece(type, color) {
 
 // ===== 高清立牌：使用者提供的雕像渲染圖（去背），永遠面向鏡頭 =====
 const HD_SIZE = { P: 1.55, N: 1.26, B: 1.68, R: 1.4, Q: 1.7, K: 1.8 }; // 立牌高度（世界單位）
-const HD_TOP = { P: 1.34, N: 1.1, B: 1.48, R: 1.24, Q: 1.48, K: 1.6 }; // 標籤／特效用頭頂高度
+const HD_TOP = { P: 1.34, N: 1.1, B: 1.48, R: 1.24, Q: 1.6, K: 1.6 }; // 標籤／特效用頭頂高度
+const HD_PED = 0.92; // 多角度立牌的底座世界寬度
 const _hdTex = {};
-function hdTexture(type, white) { // 黑方：亮色大理石與銀甲轉成黑曜石色，金飾與符文保留
-  const key = type + (white ? 'w' : 'b');
-  if (_hdTex[key]) return _hdTex[key];
+function darken(img) { // 黑方：亮色大理石與銀甲轉成黑曜石色，金飾與符文保留
+  const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
+  const x = cv.getContext('2d'); x.drawImage(img, 0, 0);
+  const d = x.getImageData(0, 0, cv.width, cv.height), a = d.data;
+  for (let i = 0; i < a.length; i += 4) {
+    if (!a[i + 3]) continue;
+    const r = a[i] / 255, g = a[i + 1] / 255, b = a[i + 2] / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), sat = mx ? (mx - mn) / mx : 0;
+    const v = mx;
+    const nv = v > 0.42 ? 0.07 + (1 - v) * 0.62 : v * 0.75; // 亮→暗（紋路反轉成淺色）
+    const w = Math.min(1, Math.max(0, (sat - 0.18) / 0.22)); // 飽和色（金、符文）保留比例
+    const dr = nv * 0.86, dg = nv * 0.9, db = nv * 1.12;
+    a[i] = 255 * (dr * (1 - w) + r * 0.88 * w);
+    a[i + 1] = 255 * (dg * (1 - w) + g * 0.88 * w);
+    a[i + 2] = 255 * Math.min(1, db * (1 - w) + b * 0.88 * w);
+  }
+  x.putImageData(d, 0, 0);
+  return cv;
+}
+function loadTex(src, white, mirror = false) {
   const tex = new THREE.Texture(); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  if (mirror) { tex.wrapS = THREE.RepeatWrapping; tex.repeat.x = -1; tex.offset.x = 1; }
   const img = new Image();
-  img.onload = () => {
-    if (white) { tex.image = img; tex.needsUpdate = true; return; }
-    const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
-    const x = cv.getContext('2d'); x.drawImage(img, 0, 0);
-    const d = x.getImageData(0, 0, cv.width, cv.height), a = d.data;
-    for (let i = 0; i < a.length; i += 4) {
-      if (!a[i + 3]) continue;
-      const r = a[i] / 255, g = a[i + 1] / 255, b = a[i + 2] / 255;
-      const mx = Math.max(r, g, b), mn = Math.min(r, g, b), sat = mx ? (mx - mn) / mx : 0;
-      const v = mx;
-      const nv = v > 0.42 ? 0.07 + (1 - v) * 0.62 : v * 0.75; // 亮→暗（紋路反轉成淺色）
-      const w = Math.min(1, Math.max(0, (sat - 0.18) / 0.22)); // 飽和色（金、符文）保留比例
-      const dr = nv * 0.86, dg = nv * 0.9, db = nv * 1.12;
-      a[i] = 255 * (dr * (1 - w) + r * 0.88 * w);
-      a[i + 1] = 255 * (dg * (1 - w) + g * 0.88 * w);
-      a[i + 2] = 255 * Math.min(1, db * (1 - w) + b * 0.88 * w);
-    }
-    x.putImageData(d, 0, 0);
-    tex.image = cv; tex.needsUpdate = true;
-  };
-  img.src = ART[type].src;
-  return (_hdTex[key] = tex);
+  img.onload = () => { tex.image = white ? img : darken(img); tex.needsUpdate = true; };
+  img.src = src;
+  return tex;
+}
+function hdTexture(type, white) {
+  const key = type + (white ? 'w' : 'b');
+  return (_hdTex[key] ||= loadTex(ART[type].src, white));
+}
+// 多角度立牌：依鏡頭與棋子朝向的夾角挑選 0/45/90/135/180° 的圖，負角度用鏡像
+function viewTextures(type, white) {
+  const key = 'V' + type + (white ? 'w' : 'b');
+  return (_hdTex[key] ||= { tex: VIEWS[type].src.map((s) => loadTex(s, white)), mir: VIEWS[type].src.map((s) => loadTex(s, white, true)) });
 }
 function buildPieceHD(type, color) {
   const g = new THREE.Group();
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: hdTexture(type, color === 'w'), transparent: true, alphaTest: 0.08, depthWrite: true }));
-  const h = HD_SIZE[type], w = h * ART[type].w / ART[type].h;
-  sp.scale.set(w, h, 1); sp.center.set(0.5, 0); sp.userData.hd = true;
+  const V = VIEWS[type];
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: V ? viewTextures(type, color === 'w').tex[0] : hdTexture(type, color === 'w'), transparent: true, alphaTest: 0.08, depthWrite: true }));
+  if (V) { // 多角度：底座寬固定為 PED_W 世界單位，錨點在底座底緣
+    const k = HD_PED / V.ped;
+    sp.scale.set(V.w * k, V.h * k, 1); sp.center.set(0.5, 1 - V.base / V.h);
+    g.userData.hdViews = viewTextures(type, color === 'w');
+  } else {
+    const h = HD_SIZE[type], w = h * ART[type].w / ART[type].h;
+    sp.scale.set(w, h, 1); sp.center.set(0.5, 0);
+  }
+  sp.userData.hd = true;
   g.add(sp);
   const blob = new THREE.Mesh(new THREE.CircleGeometry(0.4, 32), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.38, depthWrite: false }));
   blob.rotation.x = -PI / 2; blob.position.y = 0.006; blob.scale.set(1, 0.85, 1); g.add(blob);
@@ -575,6 +593,14 @@ export class View {
       if (hs) { // 立牌錨點推到底座前緣（朝鏡頭方向），讓圖中底座中心落在格子中央
         const gp = rec.group.position, dx = camP.x - gp.x, dz = camP.z - gp.z, L = Math.hypot(dx, dz) || 1;
         _v1.set(gp.x + (dx / L) * 0.3, gp.y, gp.z + (dz / L) * 0.3);
+        const vw = rec.group.userData.hdViews;
+        if (vw) {
+          const ry = rec.group.rotation.y, fx = -Math.sin(ry), fz = -Math.cos(ry), cx = dx / L, cz = dz / L;
+          const phi = Math.atan2(fx * cz - fz * cx, fx * cx + fz * cz); // 朝向到鏡頭方向的帶號夾角
+          const idx = Math.min(4, Math.round(Math.abs(phi) / (PI / 4)));
+          const m = (phi * (this.viewSign || 1)) < 0;
+          hs.material.map = (m ? vw.mir : vw.tex)[idx];
+        }
         rec.group.worldToLocal(_v1); hs.position.copy(_v1);
         hs.material.rotation = -(rec.group.rotation.z + rec.group.rotation.x * 0.7);
       }

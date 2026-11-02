@@ -32,3 +32,11 @@
     cd .. && node build.mjs
 
 遊戲內工具列「棋子」可切換「高清雕像／3D 模型」。
+
+## 多角度立牌（目前：皇后）
+把同一尊雕像的 0°/45°/90°/135°/180° 五張綠幕圖放進 `art/views/<棋種>/`（檔名 `0.jpg`…`180.jpg`），然後：
+
+    cd art && python3 cutviews.py Q && python3 packviews.py Q   # 去背、對齊底座、輸出 src/views.js
+    cd .. && node build.mjs
+
+遊戲會依鏡頭與棋子朝向的夾角自動切換圖片，另一側用鏡像。
